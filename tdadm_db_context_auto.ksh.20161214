@@ -1,0 +1,76 @@
+#!/bin/ksh
+# Created by BR39337
+#
+# DB Schema automation script
+#	Params -$1=<System Name> $2=<Account Name>
+#
+#####################################################################
+function usage
+{
+    echo $1
+    >&2 cat <<EOF
+Usage:tdadm_db_context_auto.ksh <sys_name> <acc_name>
+	where 
+		sys_name - Schema Name to added
+		acc_name - DB schema
+EOF
+}
+if [[ "${DEBUG_MODE}" && "${LOGNAME}" = "tdadm" ]];then
+        set -x
+else
+        set +x
+fi
+
+
+export sys_name=$1
+echo "Given System Name is :"$sys_name
+export acc_name=$2
+echo "Given Account Name is :"$acc_name
+
+. /tdadm/dotprofiles/td.dotprofile
+
+#Getting data from web service
+export service_data=`/tdadm/bin/a2a_webservice/ste_a2a_serv/ste_a2a_serv_run.sh --context_param a2a_truststore="/tdadm/bin/a2a_webservice/Trustcertificate/a2a_truststore.jks"  --context_param a2a_keystore="/tdadm/bin/a2a_webservice/Private_key/DEV/a2a_keystore.jks" --context_param a2a_sys_name=$sys_name --context_param a2a_acc_name=$acc_name`
+
+export rc=`echo $service_data | awk -F"|" '{print $1}'`
+echo "returncode : $rc"
+
+if [[ $rc -eq 0 ]]
+then
+export service_pwd=`echo $service_data | awk -F"|" '{print $2}'`
+#generates encrypted password
+export encry_pwd=`sh /tdadm/bin/password_encryption/Password_Encryption/Password_Encryption_run.sh --context_param Password=$service_pwd`
+else
+echo $service_data | awk -F"|" '{print $2}'
+echo "Something went wrong. Please check system name and account name(schema)."
+exit 1
+fi
+#generates the/tdgiw/globalparams/_tempcontext.properties.$ENV.$YYYYMMDD file
+
+echo "Environment : "$LIFECYCLE
+echo "Schema : "$2
+sh /tdadm/bin/tdadm_add_schema.ksh $2 $LIFECYCLE $encry_pwd
+
+echo "test file :"_tempcontext.properties.${env}.yyyyddmm
+
+touch  /tdgiw/globalparams/test.txt
+
+export temp_ctx_file=`ls -rt /tdgiw/globalparams/ | tail -1`
+echo "created file : "$temp_ctx_file
+
+print -n "Please enter Y or y to merge into context.properties:"
+read value
+echo ""
+if [[ $value = [Yy] ]]
+then
+#cp /tdgiw/globalparams/context.properties /tdgiw/globalparams/context.properties.`date '+%Y%m%d%H%M'`
+awk 'FNR==NR{a[$0]++;next}!($0 in a){print $0}' /tdgiw/globalparams/test.txt /tdgiw/globalparams/$temp_ctx_file>>/tdgiw/globalparams/test.txt
+
+if [[ $?==0 ]]
+then
+echo $acc_name schemna has been mergered into context.properties
+fi
+else exit 1
+fi
+#######awk 'FNR==NR{a[$0]++;next}!($0 in a){print $0}' /tdgiw/globalparams/$temp_ctx_file /tdgiw/globalparams/test.txt>>/tdgiw/globalparams/test.txt
+
